@@ -25,24 +25,32 @@ export default function Duenos() {
   const [errores, setErrores] = useState({})
   const [errorForm, setErrorForm] = useState('')
   const [guardando, setGuardando] = useState(false)
+  const [version, setVersion] = useState(0)
+
+  // aquí sigue el nuevo useEffect, y luego abrirNuevo, abrirEditar, etc.
+
+useEffect(() => {
+  let activo = true
 
   async function cargar() {
-    setCargando(true)
     try {
       const datos = await listarDuenos()
+      if (!activo) return
       setDuenos(
         datos.map((d) => ({ ...d, telefonos_texto: (d.telefonos ?? []).join(', ') }))
       )
     } catch (e) {
-      setAlerta({ tipo: 'danger', mensaje: e.message })
+      if (activo) setAlerta({ tipo: 'danger', mensaje: e.message })
     } finally {
-      setCargando(false)
+      if (activo) setCargando(false)
     }
   }
 
-  useEffect(() => {
-    cargar()
-  }, [])
+  cargar()
+  return () => {
+    activo = false
+  }
+}, [version])
 
   function abrirNuevo() {
     setEditandoId(null)
@@ -89,7 +97,7 @@ export default function Duenos() {
       else await crearDueno(datos)
       setMostrarForm(false)
       setAlerta({ tipo: 'success', mensaje: 'Dueño guardado correctamente' })
-      await cargar()
+      setVersion((v) => v + 1)
     } catch (err) {
       setErrorForm(err.message)
     } finally {
@@ -102,7 +110,7 @@ export default function Duenos() {
     try {
       await eliminarDueno(dueno.id_dueno)
       setAlerta({ tipo: 'success', mensaje: 'Dueño eliminado' })
-      await cargar()
+      setVersion((v) => v + 1)
     } catch (err) {
       setAlerta({ tipo: 'danger', mensaje: err.message })
     }
