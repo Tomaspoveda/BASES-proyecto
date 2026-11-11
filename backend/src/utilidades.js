@@ -28,6 +28,12 @@ export function enteroOpcional(valor, nombre) {
   }
   return numero
 }
+// Revisa que el día exista de verdad (rechaza 2024-02-31, que sí cumple el formato)
+function esFechaReal(texto) {
+  const [anio, mes, dia] = texto.split('-').map(Number)
+  const f = new Date(Date.UTC(anio, mes - 1, dia))
+  return f.getUTCFullYear() === anio && f.getUTCMonth() === mes - 1 && f.getUTCDate() === dia
+}
 
 // Fecha que puede venir o no. Si viene, tiene que ser tipo 2024-05-10.
 // Vacía = null.
@@ -35,6 +41,9 @@ export function fechaOpcional(valor, nombre) {
   if (valor === undefined || valor === null || valor === '') return null
   if (typeof valor !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(valor)) {
     throw new ErrorSolicitud(`El campo ${nombre} debe tener el formato AAAA-MM-DD`)
+  }
+  if (!esFechaReal(valor)) {
+    throw new ErrorSolicitud(`El campo ${nombre} no es una fecha válida`)
   }
   return valor
 }

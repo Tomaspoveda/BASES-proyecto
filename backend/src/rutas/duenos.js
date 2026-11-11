@@ -38,14 +38,14 @@ router.get('/:id', envolver(async (req, res) => {
 // POST /api/duenos -> crear un dueño nuevo (responde 201 = "creado") con su id
 router.post('/', envolver(async (req, res) => {
   const [creado] = await llamar('sp_crear_dueno', leerCuerpo(req.body))
-  res.status(201).json(creado)
+  res.status(201).json(conTelefonos(creado))
 }))
 
 // PUT /api/duenos/5 -> cambiar los datos y teléfonos de un dueño
 router.put('/:id', envolver(async (req, res) => {
   const id = leerId(req.params.id)
   const [actualizado] = await llamar('sp_actualizar_dueno', [id, ...leerCuerpo(req.body)])
-  res.json(actualizado)
+  res.json(conTelefonos(actualizado))
 }))
 
 // DELETE /api/duenos/5 -> borrar un dueño (si tiene mascotas, la base no deja: sale 409)
