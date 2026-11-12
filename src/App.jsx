@@ -1,52 +1,46 @@
 import { BrowserRouter, Routes, Route, NavLink, Link } from 'react-router-dom'
-import { Container, Nav, Navbar } from 'react-bootstrap'
+import Inicio from './paginas/Inicio'
 import Duenos from './paginas/Duenos'
 import Mascotas from './paginas/Mascotas'
 import Citas from './paginas/Citas'
-import Inicio from './paginas/Inicio'
 
-function Huella() {
-  return (
-    <svg width="26" height="26" viewBox="0 0 52 52" aria-hidden="true" focusable="false">
-      <g fill="currentColor">
-        <ellipse cx="8" cy="19" rx="4.6" ry="6" transform="rotate(-20 8 19)" />
-        <ellipse cx="19" cy="9.5" rx="4.6" ry="6.4" transform="rotate(-8 19 9.5)" />
-        <ellipse cx="33" cy="9.5" rx="4.6" ry="6.4" transform="rotate(8 33 9.5)" />
-        <ellipse cx="44" cy="19" rx="4.6" ry="6" transform="rotate(20 44 19)" />
-        <path d="M26 21c-6.6 0-13 6.4-13 12.6 0 4.2 3.2 6.4 7 6.4 2.3 0 3.8-1 6-1s3.7 1 6 1c3.8 0 7-2.2 7-6.4C39 27.4 32.6 21 26 21z" />
-      </g>
-    </svg>
-  )
-}
+const ENLACES = [
+  { ruta: '/', texto: 'Inicio', fin: true, d: 'M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z' },
+  { ruta: '/duenos', texto: 'Dueños', d: 'M16 20v-1.5a4.5 4.5 0 0 0-4.5-4.5h-3A4.5 4.5 0 0 0 4 18.5V20M10 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM20 20v-1.4a4 4 0 0 0-3-3.8' },
+  { ruta: '/mascotas', texto: 'Mascotas', d: 'M12 21c-3.5 0-6-1.8-6-4.2 0-2.7 3-5.8 6-5.8s6 3.1 6 5.8c0 2.4-2.5 4.2-6 4.2zM5 10a1.7 2.3 0 1 0 0-.1M19 10a1.7 2.3 0 1 0 0-.1M9 6.5a1.6 2.2 0 1 0 0-.1M15 6.5a1.6 2.2 0 1 0 0-.1' },
+  { ruta: '/citas', texto: 'Citas', d: 'M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5zM4 10h16M8 2.5V6M16 2.5V6' },
+]
 
 export default function App() {
   return (
     <BrowserRouter>
-      <Navbar className="navbar-vet" data-bs-theme="dark" expand="md">
-        <Container>
-          <Navbar.Brand as={Link} to="/">
-            <Huella />
-            Clínica Veterinaria
-          </Navbar.Brand>
-          <Navbar.Toggle aria-controls="menu-principal" />
-          <Navbar.Collapse id="menu-principal">
-            <Nav className="me-auto">
-              <Nav.Link as={NavLink} to="/duenos">Dueños</Nav.Link>
-              <Nav.Link as={NavLink} to="/mascotas">Mascotas</Nav.Link>
-              <Nav.Link as={NavLink} to="/citas">Citas</Nav.Link>
-            </Nav>
-          </Navbar.Collapse>
-        </Container>
-      </Navbar>
+      <header className="barra">
+        <Link to="/" className="marca">
+          <span className="marca-icono">🐾</span>
+          <span className="marca-texto">Clínica Veterinaria</span>
+        </Link>
 
-      <Container className="contenido">
+        <nav className="navegacion" aria-label="Principal">
+          {ENLACES.map((e) => (
+            <NavLink key={e.ruta} to={e.ruta} end={e.fin} className="nav-item">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+                strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d={e.d} />
+              </svg>
+              <span>{e.texto}</span>
+            </NavLink>
+          ))}
+        </nav>
+      </header>
+
+      <main className="contenido">
         <Routes>
-          <Route path="/" element={<Inicio />} />          
+          <Route path="/" element={<Inicio />} />
           <Route path="/duenos" element={<Duenos />} />
           <Route path="/mascotas" element={<Mascotas />} />
           <Route path="/citas" element={<Citas />} />
         </Routes>
-      </Container>
+      </main>
     </BrowserRouter>
   )
 }

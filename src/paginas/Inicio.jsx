@@ -1,65 +1,76 @@
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import Alerta from '../componentes/Alerta'
+import { listarDuenos } from '../api/duenos'
+import { listarMascotas } from '../api/mascotas'
+import { listarCitas } from '../api/citas'
 
-const ACCESOS = [
-  {
-    ruta: '/duenos',
-    titulo: 'Dueños',
-    texto: 'Registra y edita a los dueños y sus teléfonos.',
-    icono: (
-      <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor"
-        strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <circle cx="9" cy="8" r="3.5" />
-        <path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6" />
-        <circle cx="17.5" cy="9" r="2.6" />
-        <path d="M17 14.2c2.7.1 4.5 1.9 4.5 4.8" />
-      </svg>
-    ),
-  },
-  {
-    ruta: '/mascotas',
-    titulo: 'Mascotas',
-    texto: 'Consulta las mascotas, su especie y su raza.',
-    icono: (
-      <svg viewBox="0 0 52 52" width="28" height="28" fill="currentColor" aria-hidden="true">
-        <ellipse cx="8" cy="19" rx="4.6" ry="6" transform="rotate(-20 8 19)" />
-        <ellipse cx="19" cy="9.5" rx="4.6" ry="6.4" transform="rotate(-8 19 9.5)" />
-        <ellipse cx="33" cy="9.5" rx="4.6" ry="6.4" transform="rotate(8 33 9.5)" />
-        <ellipse cx="44" cy="19" rx="4.6" ry="6" transform="rotate(20 44 19)" />
-        <path d="M26 21c-6.6 0-13 6.4-13 12.6 0 4.2 3.2 6.4 7 6.4 2.3 0 3.8-1 6-1s3.7 1 6 1c3.8 0 7-2.2 7-6.4C39 27.4 32.6 21 26 21z" />
-      </svg>
-    ),
-  },
-  {
-    ruta: '/citas',
-    titulo: 'Citas',
-    texto: 'Registra, reprograma y revisa las citas de cada mascota.',
-    icono: (
-      <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor"
-        strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <rect x="3.5" y="5" width="17" height="15.5" rx="2.5" />
-        <path d="M3.5 10h17M8 3v4M16 3v4" />
-      </svg>
-    ),
-  },
+const PILA = [
+  { clave: 'citas', ruta: '/citas', titulo: 'Citas registradas', emoji: '📅' },
+  { clave: 'mascotas', ruta: '/mascotas', titulo: 'Mascotas registradas', emoji: '🐶' },
+  { clave: 'duenos', ruta: '/duenos', titulo: 'Dueños registrados', emoji: '👤' },
 ]
 
 export default function Inicio() {
+  const [totales, setTotales] = useState(null)
+  const [recientes, setRecientes] = useState([])
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let activo = true
+    async function cargar() {
+      try {
+        const [d, m, c] = await Promise.all([listarDuenos(), listarMascotas(), listarCitas()])
+        if (!activo) return
+        setTotales({ duenos: d.length, mascotas: m.length, citas: c.length })
+        setRecientes(c.slice(0, 5))
+      } catch (e) {
+        if (activo) setError(e.message)
+      }
+    }
+    cargar()
+    return () => { activo = false }
+  }, [])
+
   return (
     <>
-      <div className="inicio-cabecera">
-        <h1>Clínica Veterinaria</h1>
-        <p>¿Qué quieres gestionar hoy?</p>
-      </div>
+      <Alerta mensaje={error} onCerrar={() => setError('')} />
 
-      <div className="accesos">
-        {ACCESOS.map((a) => (
-          <Link key={a.ruta} to={a.ruta} className="acceso">
-            <span className="acceso-icono">{a.icono}</span>
-            <span className="acceso-titulo">{a.titulo}</span>
-            <span className="acceso-texto">{a.texto}</span>
-          </Link>
-        ))}
-      </div>
+      <section className="hero">
+        <div className="hero-texto">
+          <h1>Cuidamos a cada mascota con atención y cariño</h1>
+          <p>Gestiona dueños, mascotas y citas desde un solo lugar.</p>
+          <div className="hero-botones">
+            <Link to="/citas" className="boton boton-lleno">Registrar una cita</Link>
+            <Link to="/mascotas" className="boton boton-suave">Ver mascotas</Link>
+          </div>
+        </div>
+
+        <div className="pila">
+          {PILA.map((t, i) => (
+            <Link key={t.clave} to={t.ruta} className={`pila-tarjeta n${i + 1}`}>
+              <span className="pila-emoji">{t.emoji}</span>
+              <span className="pila-numero">{totales ? totales[t.clave] : '–'}</span>
+              <span className="pila-titulo">{t.titulo}</span>
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      {recientes.length > 0 && (
+        <section className="panel">
+          <h2>Citas más recientes</h2>
+          <ul className="lista-citas">
+            {recientes.map((c) => (
+              <li key={`${c.id_mascota}-${c.numero_cita}`}>
+                <span className="lista-fecha">{c.fecha_cita} · {String(c.hora).slice(0, 5)}</span>
+                <span className="lista-nombre">{c.nombre_mascota}</span>
+                <span className="lista-vet">{c.nombre_veterinario}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </>
   )
 }
