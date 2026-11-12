@@ -2,7 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate, NavLink } from 'react-router-do
 import { Container, Nav, Navbar } from 'react-bootstrap'
 import Duenos from './paginas/Duenos'
 import Mascotas from './paginas/Mascotas'
-import Citas from './paginas/citas'
+import Citas from './paginas/Citas'
 
 export default function App() {
   return (
