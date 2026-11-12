@@ -5,7 +5,7 @@ API en Express que conecta el frontend (React + Vite) con MySQL.
 
 ## Requisitos
 - Node.js 20 o superior
-- MySQL 8 con la base `proyecto_veterinaria_test` creada (ejecuta `proyecto_veterinaria_completo.sql` y luego los procedimientos de dueños y mascotas)
+- MySQL 8 con la base `proyecto_veterinaria_test` creada (ejecuta `database/proyecto_veterinaria_completo.sql`, que ya incluye todos los procedimientos)
 
 ## Instalación
 1. Entra a esta carpeta: `cd backend`
@@ -18,20 +18,28 @@ API en Express que conecta el frontend (React + Vite) con MySQL.
 En otra terminal, en la carpeta raíz del proyecto: `npm install` y `npm run dev`.
 Vite reenvía todo lo que empieza por `/api` a este servidor (ver `vite.config.js`).
 
-## Pruebas
-`npm test` ejecuta las pruebas de la traducción de errores y de las utilidades (no necesitan MySQL).
+## Pruebas y benchmark
+- `npm test` ejecuta las pruebas. Las unitarias no necesitan MySQL; las de integración se saltan solas si la base no responde.
+- `npm run benchmark` mide el efecto de los índices sobre una copia temporal de `cita` con unas 20.000 filas.
 
 ## Endpoints
 | Método | Ruta | Procedimiento |
 |---|---|---|
+| GET | /api/salud | (solo comprueba que MySQL responde) |
 | GET | /api/especies | sp_listar_especies |
 | GET | /api/razas?id_especie= | sp_listar_razas |
 | GET | /api/procedimientos | sp_listar_procedimientos |
 | GET | /api/medicamentos | sp_listar_medicamentos |
+| GET | /api/veterinarios | sp_listar_veterinarios |
 | GET, POST | /api/duenos | sp_listar_duenos, sp_crear_dueno |
 | GET, PUT, DELETE | /api/duenos/:id | sp_obtener_dueno, sp_actualizar_dueno, sp_eliminar_dueno |
 | GET, POST | /api/mascotas (?id_dueno=) | sp_listar_mascotas, sp_crear_mascota |
 | GET, PUT, DELETE | /api/mascotas/:id | sp_obtener_mascota, sp_actualizar_mascota, sp_eliminar_mascota |
+| GET | /api/citas (?id_mascota=) | sp_listar_citas |
+| POST | /api/citas | sp_registrar_cita_completa |
+| GET | /api/citas/:idMascota/:numero | sp_obtener_cita, sp_listar_procedimientos_cita, sp_listar_recetas_cita |
+| PUT | /api/citas/:idMascota/:numero | sp_reprogramar_cita |
+| DELETE | /api/citas/:idMascota/:numero | sp_eliminar_cita |
 
 ## Errores
-Siempre se responde `{ "error": "mensaje" }`: 400 validación, 404 no existe, 409 conflicto (por ejemplo, dueño con mascotas), 503 sin conexión a MySQL, 500 error inesperado.
+Siempre se responde `{ "error": "mensaje" }`: 400 validación, 404 no existe, 409 conflicto (por ejemplo, dueño con mascotas o veterinario con otra cita a esa hora), 503 sin conexión a MySQL, 500 error inesperado.

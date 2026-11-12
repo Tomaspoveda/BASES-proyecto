@@ -97,17 +97,14 @@ Los procedimientos usan `SIGNAL` con códigos propios, y `backend/src/errores.js
 
 ## 6. Transacciones
 
-Las transacciones viven **dentro de los procedimientos**, no en Node. Así la atomicidad no depende de la aplicación: cualquier cliente que llame al procedimiento obtiene las mismas garantías.
-
 | Procedimiento | Tablas que modifica | Si algo falla |
 |---|---|---|
 | `sp_crear_dueno` | `dueno` + `telefono_dueno` | `ROLLBACK`: no queda ni el dueño ni sus teléfonos |
 | `sp_actualizar_dueno` | `dueno` + `telefono_dueno` (se reemplazan los teléfonos) | `ROLLBACK`: queda como estaba |
 | `sp_eliminar_dueno` | `telefono_dueno` + `dueno` | `ROLLBACK`: no se borra nada |
+| `sp_registrar_cita_completa` | `cita` + `cita_procedimiento` + `receta` | `ROLLBACK`: no queda la cita ni sus procedimientos ni sus recetas |
+| `sp_eliminar_cita` | `receta` + `cita_procedimiento` + `cita` | `ROLLBACK`: la cita se conserva completa |
 | `sp_demo_rollback` (script principal) | 3 tablas, la tercera falla a propósito | `ROLLBACK` demostrado: los datos quedan iguales |
-
-Todos usan el mismo patrón: un `EXIT HANDLER FOR SQLEXCEPTION` que hace `ROLLBACK` y reenvía el error original con `RESIGNAL`. El código y el mensaje de error llegan intactos a la API, y desde ahí al usuario.
-
 ## 7. Índices y rendimiento
 
 Para medir el efecto de los índices bajo carga, `backend/scripts/benchmark.js` crea una copia sin índices de la tabla `cita` (`cita_bench`), con **247 citas reales + 20.000 sintéticas = 20.247 filas**. Se usa una copia para no ensuciar los datos reales. Cada consulta se mide con y sin su índice, y el tiempo es la mediana de 20 ejecuciones.
@@ -135,6 +132,7 @@ Para medir el efecto de los índices bajo carga, `backend/scripts/benchmark.js` 
   - No se puede eliminar un dueño con mascotas (409) y el dueño sigue existiendo.
   - Un dueño inexistente responde 404 con el mensaje de la base.
   - **ROLLBACK:** `sp_demo_rollback` falla a la mitad y los datos quedan exactamente iguales.
+    - Las operaciones de citas (`sp_registrar_cita_completa`, `sp_reprogramar_cita`, `sp_eliminar_cita`) **todavía no tienen pruebas automatizadas propias**; se verifican manualmente desde la interfaz.
 
 ## 9. Decisiones de diseño
 
@@ -147,16 +145,17 @@ Para medir el efecto de los índices bajo carga, `backend/scripts/benchmark.js` 
 | `dateStrings: true` | Dejar que mysql2 devuelva objetos `Date` | JavaScript no cambia el día por la zona horaria |
 | Benchmark sobre una copia de `cita` | Insertar 20.000 filas en la tabla real | No contamina los datos reales y permite medir «sin índice» de verdad |
 
+
 ## 10. Cómo se ejecuta
 
-El sistema corre **en local**: MySQL, el backend y el frontend en el computador de quien lo usa. Los pasos exactos están en el `README.md` de la raíz: crear la base con los scripts de `database/` (en orden y con `charset utf8mb4`), configurar `backend/.env`, `npm start` en `backend/` y `npm run dev` en la raíz.
+El sistema corre **en local**: MySQL, el backend y el frontend en el computador de quien lo usa. Los pasos exactos están en el `README.md` de la raíz: crear la base con el script único `database/proyecto_veterinaria_completo.sql` (con `charset utf8mb4`), configurar `backend/.env`, `npm start` en `backend/` y `npm run dev` en la raíz.
 
 No se publicó en internet porque el alcance del proyecto es local, y porque una versión pública sin inicio de sesión permitiría que cualquiera cree o borre datos.
 
 ## 11. Limitaciones conocidas y mejoras futuras
 
-- **Citas:** el modelo y los datos de `cita`, `cita_procedimiento` y `receta` existen en la base (y se usan en los índices y el benchmark), pero la interfaz todavía no las expone.
 - **Sin autenticación:** cualquier persona con acceso a la API puede operar sobre los datos.
 - **Usuario de base de datos:** la API se conecta con `root` por simplicidad. Una mejora sería crear un usuario con solo `EXECUTE` sobre los procedimientos, de modo que «sin SQL suelto» lo impusiera el propio MySQL.
-- **Scripts SQL en varios archivos:** `proyecto_veterinaria_completo.sql` borra la base al empezar, así que `procedimientos_api.sql` debe ejecutarse después. Se podría unificar en un solo script.
+- **Reprogramar una cita** solo cambia fecha, hora, veterinario y motivo. Los procedimientos y las recetas de una cita ya registrada no se editan; para cambiarlos hay que eliminar la cita y registrarla de nuevo.
+- **Las citas no se pueden filtrar** por veterinario ni por fecha desde la interfaz, porque no existe un procedimiento que lo haga.
 - **El benchmark mide con 20.247 filas**, un volumen pequeño. Los tiempos absolutos cambiarían con más datos, pero el plan de ejecución (`ALL` frente a `range`/`ref`) es el que explica la diferencia.

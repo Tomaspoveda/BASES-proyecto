@@ -27,7 +27,6 @@ export default function Duenos() {
   const [guardando, setGuardando] = useState(false)
   const [version, setVersion] = useState(0)
 
-  // aquí sigue el nuevo useEffect, y luego abrirNuevo, abrirEditar, etc.
 
 useEffect(() => {
   let activo = true
