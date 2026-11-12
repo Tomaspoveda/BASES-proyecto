@@ -28,5 +28,8 @@ router.get('/procedimientos', envolver(async (req, res) => {
 router.get('/medicamentos', envolver(async (req, res) => {
   res.json(await llamar('sp_listar_medicamentos'))
 }))
-
+// GET /api/veterinarios -> lista de veterinarios
+router.get('/veterinarios', envolver(async (req, res) => {
+  res.json(await llamar('sp_listar_veterinarios'))
+}))
 export default router

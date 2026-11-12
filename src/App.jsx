@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate, NavLink } from 'react-router-do
 import { Container, Nav, Navbar } from 'react-bootstrap'
 import Duenos from './paginas/Duenos'
 import Mascotas from './paginas/Mascotas'
+import Citas from './paginas/citas'
 
 export default function App() {
   return (
@@ -12,6 +13,7 @@ export default function App() {
           <Nav className="me-auto">
             <Nav.Link as={NavLink} to="/duenos">Dueños</Nav.Link>
             <Nav.Link as={NavLink} to="/mascotas">Mascotas</Nav.Link>
+            <Nav.Link as={NavLink} to="/citas">Citas</Nav.Link>
           </Nav>
         </Container>
       </Navbar>
@@ -21,6 +23,7 @@ export default function App() {
           <Route path="/" element={<Navigate to="/duenos" replace />} />
           <Route path="/duenos" element={<Duenos />} />
           <Route path="/mascotas" element={<Mascotas />} />
+          <Route path="/citas" element={<Citas />} />
         </Routes>
       </Container>
     </BrowserRouter>

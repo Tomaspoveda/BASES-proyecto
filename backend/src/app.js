@@ -5,6 +5,7 @@ import { manejadorErrores } from './errores.js'
 import catalogos from './rutas/catalogos.js'
 import duenos from './rutas/duenos.js'
 import mascotas from './rutas/mascotas.js'
+import citas from './rutas/citas.js'
 
 // Aquí se arma la app: se conectan todas las rutas en un solo lugar.
 export function crearApp() {
@@ -23,6 +24,7 @@ export function crearApp() {
   app.use('/api', catalogos) // /api/especies, /api/razas, ...
   app.use('/api/duenos', duenos) // /api/duenos, /api/duenos/5
   app.use('/api/mascotas', mascotas) // /api/mascotas, /api/mascotas/5
+  app.use('/api/citas', citas) // /api/citas, /api/citas/5/2
 
   // Si piden una ruta que no existe, respondemos 404 en JSON
   app.use('/api', (req, res) => {

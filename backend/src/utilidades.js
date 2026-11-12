@@ -47,3 +47,32 @@ export function fechaOpcional(valor, nombre) {
   }
   return valor
 }
+// Entero positivo que NO puede faltar (ids obligatorios).
+export function enteroRequerido(valor, nombre) {
+  if (valor === undefined || valor === null || valor === '') {
+    throw new ErrorSolicitud(`El campo ${nombre} es obligatorio`)
+  }
+  const numero = Number(valor)
+  if (typeof valor === 'boolean' || !Number.isSafeInteger(numero) || numero < 1) {
+    throw new ErrorSolicitud(`El campo ${nombre} debe ser un número entero positivo`)
+  }
+  return numero
+}
+
+// Fecha obligatoria AAAA-MM-DD.
+export function fechaRequerida(valor, nombre) {
+  const fecha = fechaOpcional(valor, nombre)
+  if (fecha === null) throw new ErrorSolicitud(`El campo ${nombre} es obligatorio`)
+  return fecha
+}
+
+// Hora obligatoria HH:MM o HH:MM:SS. Siempre se devuelve como HH:MM:SS.
+export function horaRequerida(valor, nombre) {
+  if (valor === undefined || valor === null || valor === '') {
+    throw new ErrorSolicitud(`El campo ${nombre} es obligatorio`)
+  }
+  if (typeof valor !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/.test(valor)) {
+    throw new ErrorSolicitud(`El campo ${nombre} debe tener el formato HH:MM`)
+  }
+  return valor.length === 5 ? `${valor}:00` : valor
+}

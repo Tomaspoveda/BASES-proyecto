@@ -11,6 +11,9 @@
 -- (Un INSERT que falla gasta un id de AUTO_INCREMENT; por eso, si algo
 --  sale mal a mitad de la carga, se reconstruye todo con este archivo.)
 -- =====================================================
+
+SET NAMES utf8mb4;
+
 DROP DATABASE IF EXISTS proyecto_veterinaria_test;
 CREATE DATABASE IF NOT EXISTS proyecto_veterinaria_test;
 USE proyecto_veterinaria_test;
@@ -2747,3 +2750,733 @@ CALL sp_demo_entradas_invalidas();
 -- Versión manual para la sustentación (cada línea muestra el error de SIGNAL y detiene el script; ejecutar una por una):
 -- CALL sp_actualizar_especialidad(9999, 'Cirugia');   -- "Error: El veterinario indicado no existe."
 -- CALL sp_actualizar_especialidad(7, '   ');          -- "Error: La especialidad no puede estar vacia."
+
+-- =====================================================
+-- CATÁLOGOS (solo lectura)
+-- =====================================================
+DROP PROCEDURE IF EXISTS sp_listar_especies;
+DROP PROCEDURE IF EXISTS sp_listar_razas;
+DROP PROCEDURE IF EXISTS sp_listar_procedimientos;
+DROP PROCEDURE IF EXISTS sp_listar_medicamentos;
+
+DELIMITER //
+
+CREATE PROCEDURE sp_listar_especies()
+BEGIN
+    SELECT id_especie, nombre_especie
+    FROM especie
+    ORDER BY nombre_especie;
+END //
+
+-- Si p_id_especie es NULL devuelve todas las razas
+CREATE PROCEDURE sp_listar_razas(IN p_id_especie INT)
+BEGIN
+    SELECT r.id_raza, r.nombre_raza, e.id_especie, e.nombre_especie
+    FROM raza r
+    INNER JOIN especie e ON e.id_especie = r.FK_id_especie
+    WHERE p_id_especie IS NULL OR r.FK_id_especie = p_id_especie
+    ORDER BY r.nombre_raza;
+END //
+
+CREATE PROCEDURE sp_listar_procedimientos()
+BEGIN
+    SELECT id_procedimiento, nombre_procedimiento, costo_referencia
+    FROM procedimiento
+    ORDER BY nombre_procedimiento;
+END //
+
+CREATE PROCEDURE sp_listar_medicamentos()
+BEGIN
+    SELECT id_medicamento, nombre_medicamento, presentacion
+    FROM medicamento
+    ORDER BY nombre_medicamento;
+END //
+
+DELIMITER ;
+
+
+-- =====================================================
+-- DUEÑOS
+-- Los teléfonos llegan como texto JSON: '["3001234567","3109876543"]'
+-- y salen como texto separado por comas: '3001234567,3109876543'
+-- =====================================================
+DROP PROCEDURE IF EXISTS sp_validar_dueno;
+DROP PROCEDURE IF EXISTS sp_listar_duenos;
+DROP PROCEDURE IF EXISTS sp_obtener_dueno;
+DROP PROCEDURE IF EXISTS sp_crear_dueno;
+DROP PROCEDURE IF EXISTS sp_actualizar_dueno;
+DROP PROCEDURE IF EXISTS sp_eliminar_dueno;
+
+DELIMITER //
+
+-- Valida los datos de un dueño. No devuelve nada: si algo está mal, lanza SIGNAL (400).
+-- Los parámetros son más anchos que las columnas a propósito: así un texto
+-- demasiado largo se detecta aquí en vez de truncarse en silencio.
+CREATE PROCEDURE sp_validar_dueno(
+    IN p_nombre    VARCHAR(255),
+    IN p_calle     VARCHAR(255),
+    IN p_ciudad    VARCHAR(255),
+    IN p_telefonos TEXT
+)
+BEGIN
+    DECLARE v_total     INT DEFAULT 0;
+    DECLARE v_distintos INT DEFAULT 0;
+    DECLARE v_invalidos INT DEFAULT 0;
+
+    IF p_nombre IS NULL OR TRIM(p_nombre) = '' THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'El nombre del dueño es obligatorio';
+    ELSEIF CHAR_LENGTH(TRIM(p_nombre)) < 3 THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'El nombre del dueño debe tener al menos 3 caracteres';
+    ELSEIF CHAR_LENGTH(TRIM(p_nombre)) > 50 THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'El nombre del dueño no puede tener más de 50 caracteres';
+    END IF;
+
+    IF p_calle IS NULL OR TRIM(p_calle) = '' THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'La calle es obligatoria';
+    ELSEIF CHAR_LENGTH(TRIM(p_calle)) > 100 THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'La calle no puede tener más de 100 caracteres';
+    END IF;
+
+    IF p_ciudad IS NULL OR TRIM(p_ciudad) = '' THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'La ciudad es obligatoria';
+    ELSEIF CHAR_LENGTH(TRIM(p_ciudad)) > 60 THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'La ciudad no puede tener más de 60 caracteres';
+    END IF;
+
+    -- Los IF van anidados con ELSEIF para que JSON_TYPE solo se evalúe si el JSON es válido
+    IF p_telefonos IS NULL THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Los teléfonos deben enviarse como una lista';
+    ELSEIF NOT JSON_VALID(p_telefonos) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Los teléfonos deben enviarse como una lista';
+    ELSEIF JSON_TYPE(p_telefonos) <> 'ARRAY' THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Los teléfonos deben enviarse como una lista';
+    END IF;
+
+    -- Convierte el arreglo JSON en filas y cuenta: total, distintos y los que no tienen 10 dígitos
+    SELECT COUNT(*),
+           COUNT(DISTINCT x.tel),
+           COALESCE(SUM(x.tel NOT REGEXP '^[0-9]{10}$'), 0)
+      INTO v_total, v_distintos, v_invalidos
+    FROM (
+        SELECT COALESCE(TRIM(j.tel), '') AS tel
+        FROM JSON_TABLE(p_telefonos, '$[*]' COLUMNS (tel VARCHAR(100) PATH '$')) AS j
+    ) AS x;
+
+    IF v_total = 0 THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Debe ingresar al menos un teléfono';
+    ELSEIF v_invalidos > 0 THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Los teléfonos deben tener 10 dígitos y solo contener números';
+    ELSEIF v_distintos <> v_total THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'No puede ingresar teléfonos duplicados';
+    END IF;
+END //
+
+CREATE PROCEDURE sp_listar_duenos()
+BEGIN
+    SELECT d.id_dueno, d.nombre_dueno, d.calle, d.ciudad,
+           GROUP_CONCAT(t.telefono ORDER BY t.telefono SEPARATOR ',') AS telefonos
+    FROM dueno d
+    LEFT JOIN telefono_dueno t ON t.FK_id_dueno = d.id_dueno
+    GROUP BY d.id_dueno, d.nombre_dueno, d.calle, d.ciudad
+    ORDER BY d.nombre_dueno;
+END //
+
+CREATE PROCEDURE sp_obtener_dueno(IN p_id_dueno INT)
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM dueno WHERE id_dueno = p_id_dueno) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El dueño indicado no existe', MYSQL_ERRNO = 5404;
+    END IF;
+
+    SELECT d.id_dueno, d.nombre_dueno, d.calle, d.ciudad,
+           GROUP_CONCAT(t.telefono ORDER BY t.telefono SEPARATOR ',') AS telefonos
+    FROM dueno d
+    LEFT JOIN telefono_dueno t ON t.FK_id_dueno = d.id_dueno
+    WHERE d.id_dueno = p_id_dueno
+    GROUP BY d.id_dueno, d.nombre_dueno, d.calle, d.ciudad;
+END //
+
+-- TRANSACCIÓN: dueño + sus teléfonos se guardan juntos o no se guarda nada.
+CREATE PROCEDURE sp_crear_dueno(
+    IN p_nombre    VARCHAR(255),
+    IN p_calle     VARCHAR(255),
+    IN p_ciudad    VARCHAR(255),
+    IN p_telefonos TEXT
+)
+BEGIN
+    DECLARE v_id INT;
+
+    -- Si CUALQUIER instrucción de abajo falla: deshace todo y reenvía el mismo error
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        RESIGNAL;
+    END;
+
+    CALL sp_validar_dueno(p_nombre, p_calle, p_ciudad, p_telefonos);
+
+    START TRANSACTION;
+
+    INSERT INTO dueno (nombre_dueno, calle, ciudad)
+    VALUES (TRIM(p_nombre), TRIM(p_calle), TRIM(p_ciudad));
+    SET v_id = LAST_INSERT_ID();
+
+    INSERT INTO telefono_dueno (telefono, FK_id_dueno)
+    SELECT TRIM(j.tel), v_id
+    FROM JSON_TABLE(p_telefonos, '$[*]' COLUMNS (tel VARCHAR(100) PATH '$')) AS j;
+
+    COMMIT;
+
+    CALL sp_obtener_dueno(v_id);
+END //
+
+-- TRANSACCIÓN: actualiza el dueño y reemplaza todos sus teléfonos.
+CREATE PROCEDURE sp_actualizar_dueno(
+    IN p_id_dueno  INT,
+    IN p_nombre    VARCHAR(255),
+    IN p_calle     VARCHAR(255),
+    IN p_ciudad    VARCHAR(255),
+    IN p_telefonos TEXT
+)
+BEGIN
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        RESIGNAL;
+    END;
+
+    IF NOT EXISTS (SELECT 1 FROM dueno WHERE id_dueno = p_id_dueno) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El dueño indicado no existe', MYSQL_ERRNO = 5404;
+    END IF;
+
+    CALL sp_validar_dueno(p_nombre, p_calle, p_ciudad, p_telefonos);
+
+    START TRANSACTION;
+
+    UPDATE dueno
+    SET nombre_dueno = TRIM(p_nombre),
+        calle        = TRIM(p_calle),
+        ciudad       = TRIM(p_ciudad)
+    WHERE id_dueno = p_id_dueno;
+
+    DELETE FROM telefono_dueno WHERE FK_id_dueno = p_id_dueno;
+
+    INSERT INTO telefono_dueno (telefono, FK_id_dueno)
+    SELECT TRIM(j.tel), p_id_dueno
+    FROM JSON_TABLE(p_telefonos, '$[*]' COLUMNS (tel VARCHAR(100) PATH '$')) AS j;
+
+    COMMIT;
+
+    CALL sp_obtener_dueno(p_id_dueno);
+END //
+
+-- No deja borrar un dueño que tenga mascotas (409). Si no, borra teléfonos y dueño juntos.
+CREATE PROCEDURE sp_eliminar_dueno(IN p_id_dueno INT)
+BEGIN
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        RESIGNAL;
+    END;
+
+    IF NOT EXISTS (SELECT 1 FROM dueno WHERE id_dueno = p_id_dueno) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El dueño indicado no existe', MYSQL_ERRNO = 5404;
+    END IF;
+
+    IF EXISTS (SELECT 1 FROM mascota WHERE FK_id_dueno = p_id_dueno) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'No se puede eliminar el dueño porque tiene mascotas registradas',
+                MYSQL_ERRNO = 5409;
+    END IF;
+
+    START TRANSACTION;
+    DELETE FROM telefono_dueno WHERE FK_id_dueno = p_id_dueno;
+    DELETE FROM dueno WHERE id_dueno = p_id_dueno;
+    COMMIT;
+
+    SELECT p_id_dueno AS id_dueno, 'Dueño eliminado' AS mensaje;
+END //
+
+DELIMITER ;
+
+
+-- =====================================================
+-- MASCOTAS
+-- =====================================================
+DROP PROCEDURE IF EXISTS sp_validar_mascota;
+DROP PROCEDURE IF EXISTS sp_listar_mascotas;
+DROP PROCEDURE IF EXISTS sp_obtener_mascota;
+DROP PROCEDURE IF EXISTS sp_crear_mascota;
+DROP PROCEDURE IF EXISTS sp_actualizar_mascota;
+DROP PROCEDURE IF EXISTS sp_eliminar_mascota;
+
+DELIMITER //
+
+CREATE PROCEDURE sp_validar_mascota(
+    IN p_nombre           VARCHAR(255),
+    IN p_fecha_nacimiento DATE,
+    IN p_id_dueno         INT,
+    IN p_id_raza          INT
+)
+BEGIN
+    IF p_nombre IS NULL OR TRIM(p_nombre) = '' THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'El nombre de la mascota es obligatorio';
+    ELSEIF CHAR_LENGTH(TRIM(p_nombre)) > 50 THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'El nombre de la mascota no puede tener más de 50 caracteres';
+    END IF;
+
+    IF p_fecha_nacimiento IS NULL THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'La fecha de nacimiento es obligatoria';
+    ELSEIF p_fecha_nacimiento > CURDATE() THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'La fecha de nacimiento no puede ser futura';
+    END IF;
+
+    IF p_id_dueno IS NULL THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Debe seleccionar un dueño';
+    ELSEIF NOT EXISTS (SELECT 1 FROM dueno WHERE id_dueno = p_id_dueno) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El dueño indicado no existe', MYSQL_ERRNO = 5404;
+    END IF;
+
+    IF p_id_raza IS NULL THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Debe seleccionar una raza';
+    ELSEIF NOT EXISTS (SELECT 1 FROM raza WHERE id_raza = p_id_raza) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'La raza indicada no existe', MYSQL_ERRNO = 5404;
+    END IF;
+END //
+
+-- Si p_id_dueno es NULL devuelve todas las mascotas; si no, solo las de ese dueño
+CREATE PROCEDURE sp_listar_mascotas(IN p_id_dueno INT)
+BEGIN
+    SELECT m.id_mascota, m.nombre_mascota, m.fecha_nacimiento,
+           d.id_dueno, d.nombre_dueno,
+           r.id_raza, r.nombre_raza,
+           e.id_especie, e.nombre_especie
+    FROM mascota m
+    INNER JOIN dueno d   ON d.id_dueno = m.FK_id_dueno
+    INNER JOIN raza r    ON r.id_raza = m.FK_id_raza
+    INNER JOIN especie e ON e.id_especie = r.FK_id_especie
+    WHERE p_id_dueno IS NULL OR m.FK_id_dueno = p_id_dueno
+    ORDER BY m.nombre_mascota;
+END //
+
+CREATE PROCEDURE sp_obtener_mascota(IN p_id_mascota INT)
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM mascota WHERE id_mascota = p_id_mascota) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'La mascota indicada no existe', MYSQL_ERRNO = 5404;
+    END IF;
+
+    SELECT m.id_mascota, m.nombre_mascota, m.fecha_nacimiento,
+           d.id_dueno, d.nombre_dueno,
+           r.id_raza, r.nombre_raza,
+           e.id_especie, e.nombre_especie
+    FROM mascota m
+    INNER JOIN dueno d   ON d.id_dueno = m.FK_id_dueno
+    INNER JOIN raza r    ON r.id_raza = m.FK_id_raza
+    INNER JOIN especie e ON e.id_especie = r.FK_id_especie
+    WHERE m.id_mascota = p_id_mascota;
+END //
+
+CREATE PROCEDURE sp_crear_mascota(
+    IN p_nombre           VARCHAR(255),
+    IN p_fecha_nacimiento DATE,
+    IN p_id_dueno         INT,
+    IN p_id_raza          INT
+)
+BEGIN
+    DECLARE v_id INT;
+
+    CALL sp_validar_mascota(p_nombre, p_fecha_nacimiento, p_id_dueno, p_id_raza);
+
+    INSERT INTO mascota (nombre_mascota, fecha_nacimiento, FK_id_dueno, FK_id_raza)
+    VALUES (TRIM(p_nombre), p_fecha_nacimiento, p_id_dueno, p_id_raza);
+    SET v_id = LAST_INSERT_ID();
+
+    CALL sp_obtener_mascota(v_id);
+END //
+
+CREATE PROCEDURE sp_actualizar_mascota(
+    IN p_id_mascota       INT,
+    IN p_nombre           VARCHAR(255),
+    IN p_fecha_nacimiento DATE,
+    IN p_id_dueno         INT,
+    IN p_id_raza          INT
+)
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM mascota WHERE id_mascota = p_id_mascota) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'La mascota indicada no existe', MYSQL_ERRNO = 5404;
+    END IF;
+
+    CALL sp_validar_mascota(p_nombre, p_fecha_nacimiento, p_id_dueno, p_id_raza);
+
+    UPDATE mascota
+    SET nombre_mascota   = TRIM(p_nombre),
+        fecha_nacimiento = p_fecha_nacimiento,
+        FK_id_dueno      = p_id_dueno,
+        FK_id_raza       = p_id_raza
+    WHERE id_mascota = p_id_mascota;
+
+    CALL sp_obtener_mascota(p_id_mascota);
+END //
+
+-- No deja borrar una mascota que tenga citas (409)
+CREATE PROCEDURE sp_eliminar_mascota(IN p_id_mascota INT)
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM mascota WHERE id_mascota = p_id_mascota) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'La mascota indicada no existe', MYSQL_ERRNO = 5404;
+    END IF;
+
+    IF EXISTS (SELECT 1 FROM cita WHERE FK_id_mascota = p_id_mascota) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'No se puede eliminar la mascota porque tiene citas registradas',
+                MYSQL_ERRNO = 5409;
+    END IF;
+
+    DELETE FROM mascota WHERE id_mascota = p_id_mascota;
+
+    SELECT p_id_mascota AS id_mascota, 'Mascota eliminada' AS mensaje;
+END //
+
+DELIMITER ;
+
+
+DROP PROCEDURE IF EXISTS sp_listar_veterinarios;
+DROP PROCEDURE IF EXISTS sp_listar_citas;
+DROP PROCEDURE IF EXISTS sp_obtener_cita;
+DROP PROCEDURE IF EXISTS sp_listar_procedimientos_cita;
+DROP PROCEDURE IF EXISTS sp_listar_recetas_cita;
+DROP PROCEDURE IF EXISTS sp_validar_datos_cita;
+DROP PROCEDURE IF EXISTS sp_registrar_cita_completa;
+DROP PROCEDURE IF EXISTS sp_reprogramar_cita;
+DROP PROCEDURE IF EXISTS sp_eliminar_cita;
+
+DELIMITER //
+
+CREATE PROCEDURE sp_listar_veterinarios()
+BEGIN
+    SELECT id_veterinario, nombre_veterinario, especialidad
+    FROM veterinario
+    ORDER BY nombre_veterinario;
+END //
+
+-- Si p_id_mascota es NULL lista todas las citas; si no, solo las de esa mascota
+CREATE PROCEDURE sp_listar_citas(IN p_id_mascota INT)
+BEGIN
+    SELECT c.FK_id_mascota AS id_mascota, m.nombre_mascota, c.numero_cita,
+           c.fecha_cita, c.hora, c.motivo,
+           v.id_veterinario, v.nombre_veterinario,
+           COALESCE((SELECT SUM(cp.costo)
+                     FROM cita_procedimiento cp
+                     WHERE cp.FK_id_mascota = c.FK_id_mascota
+                       AND cp.FK_numero_cita = c.numero_cita), 0) AS total_procedimientos
+    FROM cita c
+    INNER JOIN mascota m     ON m.id_mascota = c.FK_id_mascota
+    INNER JOIN veterinario v ON v.id_veterinario = c.FK_id_veterinario
+    WHERE p_id_mascota IS NULL OR c.FK_id_mascota = p_id_mascota
+    ORDER BY c.fecha_cita DESC, c.hora DESC;
+END //
+
+CREATE PROCEDURE sp_obtener_cita(IN p_id_mascota INT, IN p_numero INT)
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM cita
+                   WHERE FK_id_mascota = p_id_mascota AND numero_cita = p_numero) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'La cita indicada no existe', MYSQL_ERRNO = 5404;
+    END IF;
+
+    SELECT c.FK_id_mascota AS id_mascota, m.nombre_mascota, c.numero_cita,
+           c.fecha_cita, c.hora, c.motivo,
+           v.id_veterinario, v.nombre_veterinario
+    FROM cita c
+    INNER JOIN mascota m     ON m.id_mascota = c.FK_id_mascota
+    INNER JOIN veterinario v ON v.id_veterinario = c.FK_id_veterinario
+    WHERE c.FK_id_mascota = p_id_mascota AND c.numero_cita = p_numero;
+END //
+
+CREATE PROCEDURE sp_listar_procedimientos_cita(IN p_id_mascota INT, IN p_numero INT)
+BEGIN
+    SELECT p.id_procedimiento, p.nombre_procedimiento, cp.costo
+    FROM cita_procedimiento cp
+    INNER JOIN procedimiento p ON p.id_procedimiento = cp.FK_id_procedimiento
+    WHERE cp.FK_id_mascota = p_id_mascota AND cp.FK_numero_cita = p_numero
+    ORDER BY p.nombre_procedimiento;
+END //
+
+CREATE PROCEDURE sp_listar_recetas_cita(IN p_id_mascota INT, IN p_numero INT)
+BEGIN
+    SELECT md.id_medicamento, md.nombre_medicamento, md.presentacion, r.dosis
+    FROM receta r
+    INNER JOIN medicamento md ON md.id_medicamento = r.FK_id_medicamento
+    WHERE r.FK_id_mascota = p_id_mascota AND r.FK_numero_cita = p_numero
+    ORDER BY md.nombre_medicamento;
+END //
+
+-- Valida los datos básicos de una cita (no devuelve nada; si algo está mal lanza SIGNAL)
+CREATE PROCEDURE sp_validar_datos_cita(
+    IN p_id_mascota     INT,
+    IN p_fecha_cita     DATE,
+    IN p_hora           TIME,
+    IN p_motivo         VARCHAR(255),
+    IN p_id_veterinario INT
+)
+BEGIN
+    IF p_id_mascota IS NULL THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Debe seleccionar una mascota';
+    ELSEIF NOT EXISTS (SELECT 1 FROM mascota WHERE id_mascota = p_id_mascota) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'La mascota indicada no existe', MYSQL_ERRNO = 5404;
+    END IF;
+
+    IF p_fecha_cita IS NULL THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'La fecha de la cita es obligatoria';
+    END IF;
+
+    IF p_hora IS NULL THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'La hora de la cita es obligatoria';
+    END IF;
+
+    IF p_motivo IS NOT NULL AND CHAR_LENGTH(TRIM(p_motivo)) > 150 THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'El motivo no puede tener más de 150 caracteres';
+    END IF;
+
+    IF p_id_veterinario IS NULL THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Debe seleccionar un veterinario';
+    ELSEIF NOT EXISTS (SELECT 1 FROM veterinario WHERE id_veterinario = p_id_veterinario) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El veterinario indicado no existe', MYSQL_ERRNO = 5404;
+    END IF;
+END //
+
+-- =====================================================
+-- TRANSACCIÓN 1: registrar una cita completa
+--   cita + cita_procedimiento + receta (3 tablas): todo se guarda o nada se guarda.
+-- p_procedimientos: '[{"id_procedimiento":16,"costo":50000}]'  (costo opcional)
+-- p_recetas:        '[{"id_medicamento":4,"dosis":"1 tableta cada 12 horas"}]'
+-- Los errores de "no existe" dentro de la transacción ocurren DESPUÉS de insertar la cita,
+-- así el ROLLBACK realmente tiene algo que deshacer.
+-- =====================================================
+CREATE PROCEDURE sp_registrar_cita_completa(
+    IN p_id_mascota     INT,
+    IN p_fecha_cita     DATE,
+    IN p_hora           TIME,
+    IN p_motivo         VARCHAR(255),
+    IN p_id_veterinario INT,
+    IN p_procedimientos TEXT,
+    IN p_recetas        TEXT
+)
+BEGIN
+    DECLARE v_bloqueo       INT;
+    DECLARE v_numero        INT;
+    DECLARE v_motivo        VARCHAR(150);
+    DECLARE v_esperados     INT DEFAULT 0;
+    DECLARE v_distintos     INT DEFAULT 0;
+    DECLARE v_invalidos     INT DEFAULT 0;
+    DECLARE v_insertados    INT DEFAULT 0;
+
+    -- Si CUALQUIER instrucción falla: deshace todo y reenvía el mismo error a la API
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        RESIGNAL;
+    END;
+
+    CALL sp_validar_datos_cita(p_id_mascota, p_fecha_cita, p_hora, p_motivo, p_id_veterinario);
+
+    -- Si no mandan motivo, se usa el mismo texto del DEFAULT de la tabla
+    SET v_motivo = COALESCE(NULLIF(TRIM(p_motivo), ''), 'Control general de rutina');
+
+    -- Las listas son opcionales: vacío o NULL equivale a lista vacía
+    SET p_procedimientos = COALESCE(NULLIF(TRIM(p_procedimientos), ''), '[]');
+    SET p_recetas        = COALESCE(NULLIF(TRIM(p_recetas), ''), '[]');
+
+    IF NOT JSON_VALID(p_procedimientos) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Los procedimientos deben enviarse como una lista';
+    ELSEIF JSON_TYPE(p_procedimientos) <> 'ARRAY' THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Los procedimientos deben enviarse como una lista';
+    END IF;
+
+    IF NOT JSON_VALID(p_recetas) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Las recetas deben enviarse como una lista';
+    ELSEIF JSON_TYPE(p_recetas) <> 'ARRAY' THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Las recetas deben enviarse como una lista';
+    END IF;
+
+    -- Forma de los procedimientos: ids válidos, sin repetir, costos positivos
+    SELECT COUNT(*),
+           COUNT(DISTINCT j.id),
+           COALESCE(SUM(j.id IS NULL OR j.id < 1 OR (j.costo IS NOT NULL AND j.costo <= 0)), 0)
+      INTO v_esperados, v_distintos, v_invalidos
+    FROM JSON_TABLE(p_procedimientos, '$[*]' COLUMNS (
+            id    INT           PATH '$.id_procedimiento',
+            costo DECIMAL(10,2) PATH '$.costo')) AS j;
+
+    IF v_invalidos > 0 THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Cada procedimiento necesita un id válido y un costo mayor que cero';
+    ELSEIF v_distintos <> v_esperados THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'No puede repetir un procedimiento en la misma cita';
+    END IF;
+
+    -- Forma de las recetas: ids válidos, sin repetir, dosis no vacía y de máximo 50 caracteres
+    SELECT COUNT(*),
+           COUNT(DISTINCT j.id),
+           COALESCE(SUM(j.id IS NULL OR j.id < 1
+                        OR j.dosis IS NULL OR TRIM(j.dosis) = ''
+                        OR CHAR_LENGTH(TRIM(j.dosis)) > 50), 0)
+      INTO v_esperados, v_distintos, v_invalidos
+    FROM JSON_TABLE(p_recetas, '$[*]' COLUMNS (
+            id    INT          PATH '$.id_medicamento',
+            dosis VARCHAR(100) PATH '$.dosis')) AS j;
+
+    IF v_invalidos > 0 THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Cada medicamento necesita un id válido y una dosis de máximo 50 caracteres';
+    ELSEIF v_distintos <> v_esperados THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'No puede repetir un medicamento en la misma cita';
+    END IF;
+
+    START TRANSACTION;
+
+    -- Bloquea la fila de la mascota: si dos personas registran cita a la vez para la misma
+    -- mascota, la segunda espera y así no calculan el mismo numero_cita.
+    SELECT id_mascota INTO v_bloqueo
+    FROM mascota
+    WHERE id_mascota = p_id_mascota
+    FOR UPDATE;
+
+    SELECT COALESCE(MAX(numero_cita), 0) + 1 INTO v_numero
+    FROM cita
+    WHERE FK_id_mascota = p_id_mascota;
+
+    IF EXISTS (SELECT 1 FROM cita
+               WHERE FK_id_veterinario = p_id_veterinario
+                 AND fecha_cita = p_fecha_cita
+                 AND hora = p_hora) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El veterinario ya tiene una cita en esa fecha y hora', MYSQL_ERRNO = 5409;
+    END IF;
+
+    -- Tabla 1: la cita
+    INSERT INTO cita (FK_id_mascota, numero_cita, fecha_cita, hora, motivo, FK_id_veterinario)
+    VALUES (p_id_mascota, v_numero, p_fecha_cita, p_hora, v_motivo, p_id_veterinario);
+
+    -- Tabla 2: procedimientos. Si no se pega con un procedimiento real, ese id no existe.
+    SELECT COUNT(*) INTO v_esperados
+    FROM JSON_TABLE(p_procedimientos, '$[*]' COLUMNS (id INT PATH '$.id_procedimiento')) AS j;
+
+    IF v_esperados > 0 THEN
+        INSERT INTO cita_procedimiento (FK_id_mascota, FK_numero_cita, FK_id_procedimiento, costo)
+        SELECT p_id_mascota, v_numero, p.id_procedimiento, COALESCE(j.costo, p.costo_referencia)
+        FROM JSON_TABLE(p_procedimientos, '$[*]' COLUMNS (
+                id    INT           PATH '$.id_procedimiento',
+                costo DECIMAL(10,2) PATH '$.costo')) AS j
+        INNER JOIN procedimiento p ON p.id_procedimiento = j.id;
+        SET v_insertados = ROW_COUNT();
+
+        IF v_insertados <> v_esperados THEN
+            SIGNAL SQLSTATE '45000'
+                SET MESSAGE_TEXT = 'Uno o más procedimientos indicados no existen', MYSQL_ERRNO = 5404;
+        END IF;
+    END IF;
+
+    -- Tabla 3: recetas
+    SELECT COUNT(*) INTO v_esperados
+    FROM JSON_TABLE(p_recetas, '$[*]' COLUMNS (id INT PATH '$.id_medicamento')) AS j;
+
+    IF v_esperados > 0 THEN
+        INSERT INTO receta (FK_id_mascota, FK_numero_cita, FK_id_medicamento, dosis)
+        SELECT p_id_mascota, v_numero, md.id_medicamento, TRIM(j.dosis)
+        FROM JSON_TABLE(p_recetas, '$[*]' COLUMNS (
+                id    INT          PATH '$.id_medicamento',
+                dosis VARCHAR(100) PATH '$.dosis')) AS j
+        INNER JOIN medicamento md ON md.id_medicamento = j.id;
+        SET v_insertados = ROW_COUNT();
+
+        IF v_insertados <> v_esperados THEN
+            SIGNAL SQLSTATE '45000'
+                SET MESSAGE_TEXT = 'Uno o más medicamentos indicados no existen', MYSQL_ERRNO = 5404;
+        END IF;
+    END IF;
+
+    COMMIT;
+
+    CALL sp_obtener_cita(p_id_mascota, v_numero);
+END //
+
+-- Cambia fecha, hora, veterinario y motivo de una cita existente
+CREATE PROCEDURE sp_reprogramar_cita(
+    IN p_id_mascota     INT,
+    IN p_numero         INT,
+    IN p_fecha_cita     DATE,
+    IN p_hora           TIME,
+    IN p_id_veterinario INT,
+    IN p_motivo         VARCHAR(255)
+)
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM cita
+                   WHERE FK_id_mascota = p_id_mascota AND numero_cita = p_numero) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'La cita indicada no existe', MYSQL_ERRNO = 5404;
+    END IF;
+
+    CALL sp_validar_datos_cita(p_id_mascota, p_fecha_cita, p_hora, p_motivo, p_id_veterinario);
+
+    -- El veterinario no puede quedar con dos citas a la vez (se ignora esta misma cita)
+    IF EXISTS (SELECT 1 FROM cita
+               WHERE FK_id_veterinario = p_id_veterinario
+                 AND fecha_cita = p_fecha_cita
+                 AND hora = p_hora
+                 AND NOT (FK_id_mascota = p_id_mascota AND numero_cita = p_numero)) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El veterinario ya tiene una cita en esa fecha y hora', MYSQL_ERRNO = 5409;
+    END IF;
+
+    UPDATE cita
+    SET fecha_cita = p_fecha_cita,
+        hora = p_hora,
+        FK_id_veterinario = p_id_veterinario,
+        motivo = COALESCE(NULLIF(TRIM(p_motivo), ''), 'Control general de rutina')
+    WHERE FK_id_mascota = p_id_mascota AND numero_cita = p_numero;
+
+    CALL sp_obtener_cita(p_id_mascota, p_numero);
+END //
+
+-- =====================================================
+-- TRANSACCIÓN 2: eliminar una cita con todo lo que cuelga de ella
+--   receta + cita_procedimiento + cita (3 tablas). El orden importa: primero los hijos.
+-- =====================================================
+CREATE PROCEDURE sp_eliminar_cita(IN p_id_mascota INT, IN p_numero INT)
+BEGIN
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        RESIGNAL;
+    END;
+
+    IF NOT EXISTS (SELECT 1 FROM cita
+                   WHERE FK_id_mascota = p_id_mascota AND numero_cita = p_numero) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'La cita indicada no existe', MYSQL_ERRNO = 5404;
+    END IF;
+
+    START TRANSACTION;
+    DELETE FROM receta
+    WHERE FK_id_mascota = p_id_mascota AND FK_numero_cita = p_numero;
+    DELETE FROM cita_procedimiento
+    WHERE FK_id_mascota = p_id_mascota AND FK_numero_cita = p_numero;
+    DELETE FROM cita
+    WHERE FK_id_mascota = p_id_mascota AND numero_cita = p_numero;
+    COMMIT;
+
+    SELECT p_id_mascota AS id_mascota, p_numero AS numero_cita, 'Cita eliminada' AS mensaje;
+END //
+
+DELIMITER ;
