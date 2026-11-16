@@ -2,7 +2,7 @@
 
 Caso 1 (clínica veterinaria) · Pista Ingeniería Informática
 
-**Integrantes:** _(escriban aquí los 4 nombres)_
+**Integrantes:** Tomás Poveda, Juan Esteban Rubio, Isabela Benitez, Cristian Cifuentes y Nicolás Ayala
 
 Sistema web para gestionar dueños, mascotas y citas de una clínica veterinaria. La aplicación **no escribe SQL**: todo pasa por procedimientos almacenados de MySQL.
 
