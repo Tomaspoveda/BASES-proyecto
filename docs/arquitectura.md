@@ -111,15 +111,20 @@ Los procedimientos usan `SIGNAL` con códigos propios, y `backend/src/errores.js
 | `sp_registrar_cita_completa` | `cita` + `cita_procedimiento` + `receta` | `ROLLBACK`: no queda la cita ni sus procedimientos ni sus recetas |
 | `sp_eliminar_cita` | `receta` + `cita_procedimiento` + `cita` | `ROLLBACK`: la cita se conserva completa |
 | `sp_demo_rollback` (script principal) | 3 tablas, la tercera falla a propósito | `ROLLBACK` demostrado: los datos quedan iguales |
+
+En una copia aislada, también se verificó el fallo de la eliminación con un disparador temporal `BEFORE DELETE` sobre `cita`. El disparador levantó un `SIGNAL` después de los dos borrados de detalle y la lectura posterior confirmó que se conservaron las tres tablas para esa cita.
+
 ## 7. Índices y rendimiento
 
 Para medir el efecto de los índices bajo carga, `backend/scripts/benchmark.js` crea una copia sin índices de la tabla `cita` (`cita_bench`), con **247 citas reales + 20.000 sintéticas = 20.247 filas**. Se usa una copia para no ensuciar los datos reales. Cada consulta se mide con y sin su índice, y el tiempo es la mediana de 20 ejecuciones.
 
 | Consulta | Índice | Sin índice | Con índice | Mejora | Filas leídas |
 |---|---|---|---|---|---|
-| Citas de un trimestre | `fecha_cita` | 17,92 ms | 1,04 ms | ~17x | 20.429 → 1.705 |
-| Agenda de un veterinario en un semestre | `(FK_id_veterinario, fecha_cita)` | 12,87 ms | 0,21 ms | ~61x | 20.429 → 54 |
-| Últimas 5 citas de una mascota | `(FK_id_mascota, numero_cita)` | 9,01 ms | 0,16 ms | ~56x | 20.429 → 252 |
+| Citas de un trimestre | `fecha_cita` | 32,03 ms | 3,51 ms | 9,1× | 20.407 → 1.705 |
+| Agenda de un veterinario en un semestre | `(FK_id_veterinario, fecha_cita)` | 21,14 ms | 0,83 ms | 25,4× | 20.407 → 54 |
+| Últimas 5 citas de una mascota | `(FK_id_mascota, numero_cita)` | 22,35 ms | 0,76 ms | 29,5× | 20.407 → 254 |
+
+[Resultado del benchmark y planes de ejecución](../backend/scripts/resultado_benchmark.md)
 
 **Por qué esas columnas:**
 - **`fecha_cita`**: los reportes filtran por rango de fechas. Sin índice, el plan es `ALL` (recorre toda la tabla) y con índice pasa a `range`.
