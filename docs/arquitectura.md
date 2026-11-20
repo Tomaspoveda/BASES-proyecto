@@ -1,7 +1,7 @@
 # Documento de arquitectura · Clínica Veterinaria
 
 **Proyecto final de Bases de Datos · Caso 1 · Ingeniería Informática**
-**Integrantes:** _(escriban aquí los 4 nombres)_
+**Integrantes:** Tomás Poveda, Juan Esteban Rubio, Isabela Benitez, Cristian Cifuentes y Nicolás Ayala
 
 ## 1. Visión general
 
@@ -9,15 +9,17 @@ El sistema tiene tres capas. La regla central del diseño es que **la aplicació
 
 ```mermaid
 flowchart LR
-    N["Navegador<br/>React + Vite<br/>puerto 5173"] -->|"HTTP /api"| A["API Express<br/>Node 20<br/>puerto 3000"]
+    N["Navegador<br/>React + Vite<br/>puerto 5173"] -->|"HTTP /api"| A["API Express<br/>Node 22<br/>puerto 3000"]
     A -->|"CALL sp_..."| M[("MySQL 8<br/>proyecto_veterinaria_test")]
 ```
 
 | Capa | Tecnología | Responsabilidad |
 |---|---|---|
 | Interfaz | React 19, React Router, React-Bootstrap | Formularios, tablas, mensajes y validación de entrada |
-| API | Node 20, Express 5, mysql2 | Recibir peticiones HTTP, validar su forma, llamar procedimientos y traducir errores |
+| API | Node 22, Express 5, mysql2 | Recibir peticiones HTTP, validar su forma, llamar procedimientos y traducir errores |
 | Base de datos | MySQL 8 | Reglas de negocio, transacciones e integridad de los datos |
+
+En texto plano: navegador (React y Vite) → petición HTTP → API Express → `CALL` → MySQL.
 
 Vite reenvía todo lo que empieza por `/api` al backend (proxy en `vite.config.js`). Así el navegador habla con un solo origen y no hace falta configurar CORS.
 
@@ -29,6 +31,8 @@ Vite reenvía todo lo que empieza por `/api` al backend (proxy en `vite.config.j
 - **Una única función habla con la base: `llamar(procedimiento, parametros)`.** Arma `CALL sp_nombre(?, ?, ...)` con un `?` por cada parámetro. `mysql2` escapa cada valor antes de enviarlo, así que el texto que escribe el usuario nunca se concatena como SQL.
 - `llamar` solo acepta nombres que cumplan `^sp_[a-z_]+$`. Si alguien intenta pasar otra cosa, lanza un error antes de tocar la base.
 - La única consulta directa de toda la API es `SELECT 1` en `/api/salud`, que comprueba que MySQL responde y no toca ninguna tabla.
+
+- `veterinaria_api@localhost` recibe `EXECUTE` sobre los 22 procedimientos de entrada. MySQL ejecuta el cuerpo con los permisos del definidor. Los permisos directos de lectura, escritura, DDL y las rutinas de demostración quedan reservados a sus respectivas cuentas.
 
 ## 3. Flujo de punta a punta: crear un dueño
 
@@ -66,6 +70,8 @@ sequenceDiagram
     end
 ```
 
+En texto plano: React valida el formulario y envía el JSON → Express valida los datos y llama al procedimiento → MySQL inserta el dueño y sus teléfonos en una transacción → Express responde con el dueño creado o con el error devuelto tras revertir los cambios.
+
 El mismo recorrido se repite en las demás operaciones, y solo cambian la ruta y el procedimiento. Por ejemplo, `PUT /api/mascotas/5` llama a `sp_actualizar_mascota`.
 
 ## 4. Validación en capas: qué se valida dónde y por qué
@@ -75,7 +81,7 @@ El mismo recorrido se repite en las demás operaciones, y solo cambian la ruta y
 | **Frontend** (`src/validaciones/`) | Formato y campos obligatorios, antes de enviar | Nombre de 3 a 50 caracteres, teléfonos de 10 dígitos sin repetir, fecha de nacimiento no futura | Da respuesta inmediata al usuario y ahorra viajes al servidor. **No es seguridad**, porque la API puede llamarse sin la interfaz |
 | **API** (`backend/src/`) | La *forma* de lo recibido | `telefonos` es una lista, los ids son enteros positivos, las fechas son `AAAA-MM-DD` y existen de verdad (no el 31 de febrero), el JSON no está dañado | No confía en el cliente y corta lo mal armado antes de llegar a la base |
 | **Procedimientos** (`sp_validar_*`) | Reglas de negocio, con `SIGNAL` | Teléfonos de 10 dígitos y sin duplicados, el dueño y la raza existen, no se elimina un dueño con mascotas | Las reglas viven junto a los datos: valen para cualquier cliente que llame al procedimiento |
-| **Tablas** (`CHECK`, `NOT NULL`, `UNIQUE`, `FOREIGN KEY`) | Integridad estructural | Costos positivos, un veterinario no puede tener dos citas a la misma fecha y hora, llaves foráneas válidas | Es la última barrera: nada que la rompa puede guardarse, venga de donde venga |
+| **Tablas** (`CHECK`, `NOT NULL`, `UNIQUE`, `FOREIGN KEY`) | Integridad estructural | Costos positivos, un veterinario no puede tener dos citas a la misma fecha y hora, llaves foráneas válidas y supervisor distinto del propio veterinario | Es la última barrera: nada que la rompa puede guardarse, venga de donde venga |
 
 Los límites de longitud (50, 100, 60) son los mismos en el frontend, en los procedimientos y en las columnas, para que un dato aceptado arriba nunca sea rechazado abajo.
 
@@ -123,16 +129,12 @@ Para medir el efecto de los índices bajo carga, `backend/scripts/benchmark.js` 
 
 ## 8. Pruebas automatizadas
 
-`npm test` (en `backend/`) ejecuta 18 pruebas con el ejecutor nativo de Node:
+En `backend/`, `npm test` ejecuta las pruebas unitarias y `npm run test:integracion` exige una base de prueba cargada. La suite usa Express y MySQL con los permisos reales de la API.
 
-- **Unitarias** (no necesitan MySQL): traducción de errores a códigos HTTP, validación de ids, fechas y teléfonos.
-- **De integración** (levantan la API de verdad y usan MySQL; se saltan solas si MySQL no responde):
-  - Crear, actualizar y eliminar un dueño con sus teléfonos deja la base como estaba.
-  - Teléfonos repetidos o con letras responden 400 y no guardan nada.
-  - No se puede eliminar un dueño con mascotas (409) y el dueño sigue existiendo.
-  - Un dueño inexistente responde 404 con el mensaje de la base.
-  - **ROLLBACK:** `sp_demo_rollback` falla a la mitad y los datos quedan exactamente iguales.
-    - Las operaciones de citas (`sp_registrar_cita_completa`, `sp_reprogramar_cita`, `sp_eliminar_cita`) **todavía no tienen pruebas automatizadas propias**; se verifican manualmente desde la interfaz.
+- Dueños: alta, edición y eliminación, teléfonos inválidos, dueño con mascotas e ID inexistente.
+- Citas: alta con detalles, reprogramación con conservación de detalles, eliminación, conflicto de agenda y dosis inválida.
+- Atomicidad: el alta falla al intentar guardar una receta para un medicamento inexistente. La prueba verifica que el listado queda igual y que la cita y sus detalles se pueden registrar de nuevo con las mismas claves y horario.
+- Privilegios: MySQL rechaza la lectura directa de una tabla y la llamada a una rutina de demostración.
 
 ## 9. Decisiones de diseño
 
@@ -148,14 +150,13 @@ Para medir el efecto de los índices bajo carga, `backend/scripts/benchmark.js` 
 
 ## 10. Cómo se ejecuta
 
-El sistema corre **en local**: MySQL, el backend y el frontend en el computador de quien lo usa. Los pasos exactos están en el `README.md` de la raíz: crear la base con el script único `database/proyecto_veterinaria_completo.sql` (con `charset utf8mb4`), configurar `backend/.env`, `npm start` en `backend/` y `npm run dev` en la raíz.
+El sistema corre **en local**: MySQL, el backend y el frontend en el computador de quien lo usa. Los pasos para cargar el esquema, aprovisionar el usuario de la API y arrancar ambos servidores están en el [README](../README.md).
 
 No se publicó en internet porque el alcance del proyecto es local, y porque una versión pública sin inicio de sesión permitiría que cualquiera cree o borre datos.
 
 ## 11. Limitaciones conocidas y mejoras futuras
 
 - **Sin autenticación:** cualquier persona con acceso a la API puede operar sobre los datos.
-- **Usuario de base de datos:** la API se conecta con `root` por simplicidad. Una mejora sería crear un usuario con solo `EXECUTE` sobre los procedimientos, de modo que «sin SQL suelto» lo impusiera el propio MySQL.
 - **Reprogramar una cita** solo cambia fecha, hora, veterinario y motivo. Los procedimientos y las recetas de una cita ya registrada no se editan; para cambiarlos hay que eliminar la cita y registrarla de nuevo.
 - **Las citas no se pueden filtrar** por veterinario ni por fecha desde la interfaz, porque no existe un procedimiento que lo haga.
 - **El benchmark mide con 20.247 filas**, un volumen pequeño. Los tiempos absolutos cambiarían con más datos, pero el plan de ejecución (`ALL` frente a `range`/`ref`) es el que explica la diferencia.

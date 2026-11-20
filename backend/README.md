@@ -4,23 +4,23 @@ API en Express que conecta el frontend (React + Vite) con MySQL.
 **Regla del proyecto:** la API no escribe SQL suelto; solo llama procedimientos almacenados (`CALL sp_...`).
 
 ## Requisitos
-- Node.js 20 o superior
+- Node.js 22.13 o superior
 - MySQL 8 con la base `proyecto_veterinaria_test` creada (ejecuta `database/proyecto_veterinaria_completo.sql`, que ya incluye todos los procedimientos)
 
 ## Instalación
 1. Entra a esta carpeta: `cd backend`
-2. Instala dependencias: `npm install`
-3. Copia `.env.example` como `.env` y escribe tu usuario y clave de MySQL
+2. Instala dependencias: `npm ci`
+3. Copia `.env.example` como `.env` y escribe la clave de `veterinaria_api` según los [pasos de instalación](../README.md#2-crear-la-base-de-datos)
 4. Arranca el servidor: `npm start` (queda en http://localhost:3000)
 5. Comprueba que responde: abre http://localhost:3000/api/salud y debe mostrar `{"ok":true}`
 
 ## Frontend
-En otra terminal, en la carpeta raíz del proyecto: `npm install` y `npm run dev`.
+En otra terminal, en la carpeta raíz del proyecto: `npm ci` y `npm run dev`.
 Vite reenvía todo lo que empieza por `/api` a este servidor (ver `vite.config.js`).
 
 ## Pruebas y benchmark
-- `npm test` ejecuta las pruebas. Las unitarias no necesitan MySQL; las de integración se saltan solas si la base no responde.
-- `npm run benchmark` mide el efecto de los índices sobre una copia temporal de `cita` con unas 20.000 filas.
+- `npm test` ejecuta las pruebas unitarias. `npm run test:integracion` ejecuta también las pruebas HTTP con MySQL y falla si la base no está disponible.
+- `npm run benchmark` mide el efecto de los índices sobre una copia temporal de `cita` con unas 20.000 filas. Utiliza `BENCH_DB_USER` y `BENCH_DB_PASSWORD`.
 
 ## Endpoints
 | Método | Ruta | Procedimiento |

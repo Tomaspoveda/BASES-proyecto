@@ -40,8 +40,7 @@ export function traducirError(err) {
     case 1451: // llave foránea (hay registros pegados a este)
     case 1452:
       return { estado: 409, mensaje: 'La operación entra en conflicto con registros relacionados' }
-    case 1045: // clave mala o base que no existe
-        case 3819: // un CHECK de la tabla no se cumplió
+    case 3819: // un CHECK de la tabla no se cumplió
       return { estado: 400, mensaje: 'Algún valor no cumple las reglas de la base de datos' }
     case 1048: // una columna NOT NULL llegó vacía
       return { estado: 400, mensaje: 'Falta un dato obligatorio' }
@@ -53,6 +52,7 @@ export function traducirError(err) {
     case 1213: // deadlock
     case 1205: // tiempo de espera de bloqueo agotado
       return { estado: 409, mensaje: 'La operación chocó con otra en curso. Intenta de nuevo' }
+    case 1045: // credenciales incorrectas
     case 1049:
       return { estado: 503, mensaje: 'No se pudo conectar con la base de datos' }
     default:
