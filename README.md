@@ -24,7 +24,7 @@ Navegador (React + Vite)  →  API (Node + Express)  →  CALL sp_...  →  MySQ
 ## 1. Descargar el proyecto
 
 ```
-git clone --branch correciones-nico https://github.com/nicoayala07/BASES-proyecto.git
+git clone --branch PRUEBAS https://github.com/Tomaspoveda/BASES-proyecto.git
 cd BASES-proyecto
 ```
 
@@ -115,7 +115,7 @@ npm ci
 npm run dev
 ```
 
-Abre http://localhost:5173 en el navegador. Se ve la pantalla de inicio, con los totales de dueños, mascotas y citas y accesos a cada sección.
+Abre la URL que Vite muestre después de arrancar (normalmente http://localhost:5173) en el navegador. Si el puerto 5173 está ocupado, Vite elegirá otro disponible —por ejemplo, http://localhost:5174—; abre esa URL. Se ve la pantalla de inicio, con los totales de dueños, mascotas y citas y accesos a cada sección.
 
 ## 5. Qué se puede hacer
 
@@ -170,5 +170,6 @@ docs/        documento de arquitectura
 | La página dice «No se pudo conectar con el servidor» | El backend no está corriendo. Revisa el paso 3. |
 | `mysql` no se reconoce como comando | Abre el _MySQL Command Line Client_ desde el menú de inicio, o usa la ruta completa de `mysql.exe`. |
 | El puerto 3000 está ocupado | Cambia `PORT` en `backend/.env` y el destino del proxy en `vite.config.js`. |
+| Vite avisa que el puerto 5173 está ocupado | Abre la URL alternativa que Vite muestra en la terminal (por ejemplo, http://localhost:5174). |
 
 > Cada vez que se ejecuta `proyecto_veterinaria_completo.sql` se pierde lo que se haya creado desde la página, porque el script borra y recrea la base.
