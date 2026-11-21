@@ -13,10 +13,24 @@
 //   node scripts/benchmark.js 50000   -> agrega 50.000 filas (el mínimo del proyecto es 5.000)
 //
 // Nota: esto es una herramienta de medición, no parte de la aplicación; por eso usa SQL directo.
-// Necesita un usuario con permisos sobre las tablas (el root del .env sirve).
+// Se ejecuta con credenciales administrativas separadas de las de la API.
 import { writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { pool } from '../src/db.js'
+import 'dotenv/config'
+import mysql from 'mysql2/promise'
+
+if (!process.env.BENCH_DB_USER || !process.env.BENCH_DB_PASSWORD) {
+  throw new Error('Configura BENCH_DB_USER y BENCH_DB_PASSWORD para el benchmark')
+}
+
+const pool = mysql.createPool({
+  host: process.env.DB_HOST ?? 'localhost',
+  port: Number(process.env.DB_PORT ?? 3306),
+  database: process.env.DB_NAME ?? 'proyecto_veterinaria_test',
+  user: process.env.BENCH_DB_USER,
+  password: process.env.BENCH_DB_PASSWORD,
+  charset: 'utf8mb4',
+})
 
 const TABLA = 'cita_bench'
 const MINIMO = 5000

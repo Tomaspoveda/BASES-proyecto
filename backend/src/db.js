@@ -2,12 +2,21 @@ import 'dotenv/config' // lee el archivo .env (usuario, clave, etc.)
 import mysql from 'mysql2/promise'
 
 // El "pool" es un grupito de conexiones a MySQL que se reutilizan (más rápido que abrir una cada vez).
-// Todo sale del archivo .env; si falta algo, usa los valores de la derecha.
+// El usuario de la aplicación solo tiene EXECUTE sobre las rutinas de sus rutas.
+const usuario = process.env.DB_USER ?? 'veterinaria_api'
+const clave = process.env.DB_PASSWORD
+if (usuario !== 'veterinaria_api') {
+  throw new Error('Configura DB_USER=veterinaria_api para la conexión de la API')
+}
+
+export function validarConfiguracion() {
+  if (!clave?.trim()) throw new Error('Configura DB_PASSWORD con la clave de veterinaria_api')
+}
 export const pool = mysql.createPool({
   host: process.env.DB_HOST ?? 'localhost',
   port: Number(process.env.DB_PORT ?? 3306),
-  user: process.env.DB_USER ?? 'root',
-  password: process.env.DB_PASSWORD ?? '',
+  user: usuario,
+  password: clave,
   database: process.env.DB_NAME ?? 'proyecto_veterinaria_test',
   charset: 'utf8mb4', // para que las tildes y la ñ salgan bien
   dateStrings: true, // las fechas llegan como texto '2024-05-10' (si no, JavaScript les cambia el día por la zona horaria)
