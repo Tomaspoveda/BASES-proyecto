@@ -1,8 +1,10 @@
 import { crearApp } from './app.js'
-import { pool } from './db.js'
+import { pool, validarConfiguracion } from './db.js'
 
 // El puerto sale del .env (3000 por defecto; el frontend ya apunta a ese en vite.config.js)
 const puerto = Number(process.env.PORT ?? 3000)
+
+validarConfiguracion()
 
 // Prende el servidor
 crearApp().listen(puerto, async () => {
