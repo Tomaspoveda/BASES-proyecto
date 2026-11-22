@@ -5,7 +5,9 @@ export default function Alerta({ tipo = 'danger', mensaje, onCerrar }) {
 
   return (
     <Alert variant={tipo} dismissible onClose={onCerrar}>
-      {mensaje}
+      {mensaje === 'Ocurrió un error inesperado'
+        ? 'No pudimos cargar la información de la clínica. Comprueba la conexión con el servidor e inténtalo de nuevo.'
+        : mensaje}
     </Alert>
   )
 }
