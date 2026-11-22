@@ -3,6 +3,7 @@ import Inicio from './paginas/Inicio'
 import Duenos from './paginas/Duenos'
 import Mascotas from './paginas/Mascotas'
 import Citas from './paginas/Citas'
+import { Gatito, Ramita } from './componentes/Ilustraciones'
 
 const ENLACES = [
   { ruta: '/', texto: 'Inicio', fin: true, d: 'M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z' },
@@ -14,10 +15,11 @@ const ENLACES = [
 export default function App() {
   return (
     <BrowserRouter>
+      <div className="cinta-bienvenida">Un lugar tranquilo para cuidar a quienes más quieres <span aria-hidden="true">✳</span></div>
       <header className="barra">
         <Link to="/" className="marca">
-          <span className="marca-icono">🐾</span>
-          <span className="marca-texto">Clínica Veterinaria</span>
+          <span className="marca-icono"><Gatito /></span>
+          <span className="marca-texto">Clínica Veterinaria<small>CUIDADO CON CARIÑO</small></span>
         </Link>
 
         <nav className="navegacion" aria-label="Principal">
@@ -31,6 +33,7 @@ export default function App() {
             </NavLink>
           ))}
         </nav>
+        <Link to="/citas" className="boton boton-lleno barra-cita">Ir a citas <span aria-hidden="true">↗</span></Link>
       </header>
 
       <main className="contenido">
@@ -41,6 +44,13 @@ export default function App() {
           <Route path="/citas" element={<Citas />} />
         </Routes>
       </main>
+      <footer className="pie">
+        <div className="pie-interior">
+          <Link to="/" className="marca"><span className="marca-icono"><Gatito /></span><span className="marca-texto">Clínica Veterinaria<small>PEQUEÑAS PATITAS. GRANDES AFECTOS.</small></span></Link>
+          <p>El cariño también es una forma de cuidar.</p>
+          <Ramita className="pie-ramita" />
+        </div>
+      </footer>
     </BrowserRouter>
   )
 }
